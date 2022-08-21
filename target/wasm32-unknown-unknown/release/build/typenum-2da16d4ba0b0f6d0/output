@@ -1,0 +1,2 @@
+cargo:rustc-env=TYPENUM_BUILD_CONSTS=/home/miso/!Programing/Miso-Repo/indexer/target/wasm32-unknown-unknown/release/build/typenum-2da16d4ba0b0f6d0/out/consts.rs
+cargo:rustc-env=TYPENUM_BUILD_OP=/home/miso/!Programing/Miso-Repo/indexer/target/wasm32-unknown-unknown/release/build/typenum-2da16d4ba0b0f6d0/out/op.rs
