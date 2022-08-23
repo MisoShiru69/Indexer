@@ -104,7 +104,7 @@ blueprint! {
 
             //find the legnth of the hashmap, which is the number of index pool in Indexer fund
             let hash_length:usize = self.index_pool.len();
-            info!("[NOTE] There are {} index pools in the Index fund", hash_length);
+            info!("[NOTE] There are {} index pools in the index fund", hash_length);
 
             //find the amount to deposit in each index pool = deposit_amount / hash_length
             let amount: Decimal = deposit_amount.amount() / hash_length;
@@ -129,7 +129,7 @@ blueprint! {
                     let bucket = deposit_amount.take(amount);
                     let index_component_address:ComponentAddress  = *component_address;
                     let index_component:IndexPool = index_component_address.into();
-                    info!("[FINAL] {} 030000000000000000000000000000000000000000000000000004 has been deposited", amount);
+                    info!("[FINAL] {} XRD has been deposited", amount);
                     info!("------------------------------------------------------------------------------------");
                     
                     //Deposit into index pool
@@ -217,7 +217,7 @@ blueprint! {
 
                     //Take calculated amount from index pool
                     let return_bucket: Bucket = index_component.withdraw(take_amount);
-                    info!("Withdrawing {} {} tokens from Index Pool", take_amount, resource_address);
+                    info!("Withdrawing {} {:?} tokens from index pool", take_amount, borrow_resource_manager!(*resource_address).metadata());
 
                     //swap tokens for XRD
                     let ociswap_component_address: ComponentAddress  = self.ociswap_address.unwrap();
@@ -308,28 +308,37 @@ blueprint! {
             let arb_bucket = index_component.take_all();
             
             info!("You have borrowed {} {:?} tokens from the index pool", arb_bucket.amount(), borrow_resource_manager!(token_address).metadata());
+            info!("------------------------------------------------------------------------------------");
+
+            let initial_investment = arb_bucket.amount();
 
             let ociswap_component_address: ComponentAddress  = self.ociswap_address.unwrap();
             let ociswap_component:Ociswap = ociswap_component_address.into();
 
+            //Swap index pool tokens to XRD using Ociswap
             let oci_bucket = ociswap_component.swap(arb_bucket, RADIX_TOKEN);
-
             info!("You recieved {} XRD from Ociswap", oci_bucket.amount());
 
+            //Get the Radex component
             let radex_component_address: ComponentAddress  = self.radex_address.unwrap();
             let radex_component:Radex = radex_component_address.into();
 
+            //Swap the XRD from Ociswap for cheaper index pool token found on Radex
             let radex_bucket = radex_component.swap(oci_bucket, token_address);
-
             info!("You recieved {} {:?} from Radex", radex_bucket.amount(), borrow_resource_manager!(token_address).metadata());
 
-            info!("You have returned {} {:?} to the index pool",radex_bucket.amount(), borrow_resource_manager!(token_address).metadata());
+            //Calculate arbitrage profit
+            info!("You made a profit of {} {:?}", (radex_bucket.amount() - initial_investment), borrow_resource_manager!(token_address).metadata());
 
+            //Return tokens to index pool
+            info!("You have returned {} {:?} to the index pool",radex_bucket.amount(), borrow_resource_manager!(token_address).metadata());
             index_component.deposit(radex_bucket);
 
         }
-//FLASH LOANS
+        //FLASH LOAN utilizes the take_loan, repay_loan, and opportunity method
         pub fn take_loan(&mut self, loan_amount: Decimal, token_address:ResourceAddress) -> (Bucket, Bucket) {
+            
+            info!("[INFO] Enjoy your flash loan of {} {:?}!", loan_amount, borrow_resource_manager!(token_address).metadata());
             
             //check the index pool balance
             let component_address = self.index_pool.get(&token_address);
@@ -337,13 +346,17 @@ blueprint! {
             let index_component:IndexPool = index_component_address.into();
             let loan_vault_balance = index_component.balance();
 
+            //asset loan amount is < index pool balance
             assert!(
                 loan_amount <= loan_vault_balance,
                 "Not enough liquidity to supply this loan!"
             );
 
-            let amount_due = loan_amount * dec!("1.001");
+            //Calculate repayment amount
+            let amount_due = loan_amount * dec!("1.04");
+            info!("[INFO] Flash loan repayment amount = {} {:?}", amount_due, borrow_resource_manager!(token_address).metadata());
 
+            //Mint transient token
             let loan_terms = self.admin_vault.authorize(|| {
                 borrow_resource_manager!(self.transient_resource_address).mint_non_fungible(
                     &NonFungibleId::random(),
@@ -352,16 +365,23 @@ blueprint! {
                     },
                 )
             });
-            (index_component.withdraw(loan_amount), loan_terms)
+
+            //return loan and transient token
+            return (index_component.withdraw(loan_amount), loan_terms);
         }
 
         pub fn repay_loan(&mut self, mut loan_repayment: Bucket, loan_terms: Bucket) -> Bucket{
+            
+            //asset transient token resource address
             assert!(
                 loan_terms.resource_address() == self.transient_resource_address,
                 "Incorrect resource passed in for loan terms"
             );
 
+            //Get loan repayment amount
             let terms: LoanDue = loan_terms.non_fungible().data();
+
+            //Assert repayment >= loan repayment amount
             assert!(
                 loan_repayment.amount() >= terms.amount_due,
                 "Insufficient repayment given for your loan!"
@@ -374,8 +394,11 @@ blueprint! {
             let index_component_address:ComponentAddress  = *component_address.unwrap();
             let index_component:IndexPool = index_component_address.into();
             
+            info!("{} {:?} has been returned to the Index Pool",return_bucket.amount(), borrow_resource_manager!(token_address).metadata());
+            //Put the repayment amount back into the index pool
             index_component.deposit(return_bucket);
 
+            //Burn the transient token
             self.admin_vault.authorize(|| loan_terms.burn());
 
             return loan_repayment;
@@ -384,19 +407,24 @@ blueprint! {
         //This is a helper method to illustrate the functionality of the flash loan feature
         //This method take a few tokens from the OCI liquidity pools to cover loan fees
         pub fn opportunity(&self, token:Bucket) -> (Bucket,Bucket){
-
+            
+            //Get resource address
             let token_address:ResourceAddress = token.resource_address();
 
+            //Get token amount
             let token_amount:Decimal = token.amount();
 
+            //Get 10% of token amount
             let take_amount:Decimal = token_amount * dec!("0.1");
 
-            //Deposit swapped asset into index pool
+            //Get Ociswap component
             let ociswap_component_address: ComponentAddress  = self.ociswap_address.unwrap();
             let ociswap_component:Ociswap = ociswap_component_address.into();
 
+            //Take 10% of token amount from specified Ociswap liquidity pool 
             let return_bucket:Bucket = ociswap_component.remove_liquidity(take_amount, token_address);
 
+            //return orginal amount + 10% to user
             return (token, return_bucket);
         }   
 

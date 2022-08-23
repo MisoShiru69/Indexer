@@ -31,5 +31,10 @@ blueprint! {
         pub fn withdraw(&mut self, token_amount:Decimal)->Bucket{
             return self.oci_pool.take(token_amount);
         }
+
+        //Method to get balance
+        pub fn balance(&self) -> Decimal {
+            return self.oci_pool.amount();
+        }
     }
 }

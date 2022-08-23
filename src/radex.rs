@@ -70,17 +70,17 @@ blueprint! {
 
             //Get the price of deposited token
             let oracle_price1:Decimal = oracle2_component.get_price(token1_address).into();
-            info!("[NOTE] The price of {} is {} USD",token1_address, oracle_price1);
+            info!("[NOTE] The price of {:?} is {} USD",borrow_resource_manager!(token1_address).metadata(), oracle_price1);
 
             //Get the price of the wanted token
             let oracle2_price2:Decimal = oracle2_component.get_price(token2_address.into());
-            info!("[NOTE] The price of {} is {} USD",token2_address, oracle2_price2);
+            info!("[NOTE] The price of {:?} is {} USD",borrow_resource_manager!(token2_address).metadata(), oracle2_price2);
 
             //Calculate the amount of the wanted token based on the price of the tokens
             let return_amount:Decimal = (token1_amount * oracle_price1) / oracle2_price2;
-            info!("[CALC] {} tokens X ${}/token = ${}",token1_amount, oracle_price1, (token1_amount * oracle_price1));
-            info!("[CALC] ${} / ${}/token = {} tokens",(token1_amount * oracle_price1), oracle2_price2, return_amount);
-            info!("[FINAL] {} {} has been deposited",return_amount, token2_address);
+            info!("[CALC] {} tokens X ${} per token = ${}",token1_amount, oracle_price1, (token1_amount * oracle_price1));
+            info!("[CALC] ${} / ${} per token = {} tokens",(token1_amount * oracle_price1), oracle2_price2, return_amount);
+            info!("[FINAL] {} {:?} has been deposited",return_amount, borrow_resource_manager!(token2_address).metadata());
             info!("------------------------------------------------------------------------------------");
 
             //Withdraw wanted token from the Ociswap pool component
@@ -94,6 +94,16 @@ blueprint! {
         pub fn oracle2_address(&mut self, oracle2_address:ComponentAddress){
             self.oracle2_address = Some(oracle2_address);
             info!("{}", self.oracle2_address.unwrap());
+        }
+
+        //This method shows the balance of the liquidity pools
+        pub fn show_liquidity_pool(&self){
+            info!("LIQUIDITY POOL BALANCES");
+            for (resource_address, component_address) in &self.radex_pool {
+                let oci_pool_component:&RadexPool = component_address;
+                let balance = oci_pool_component.balance();
+                info!("TOKEN:[{:?}] *** TOKEN BALANCE: {} ",borrow_resource_manager!(*resource_address).metadata(), balance);
+            }
         }
     }
 }
